@@ -1,0 +1,116 @@
+#Installation de Docker et Déploiement de Services
+
+
+#Étapes d'Installation
+
+#Étape 1 : Préparer le dépôt APT de Docker
+#Mettre à jour le système et installer les dépendances nécessaires pour Docker.
+apt-get update -y
+apt-get install -y ca-certificates curl
+
+#Configurer les permissions et télécharger la clé GPG de Docker.
+install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
+chmod a+r /etc/apt/keyrings/docker.asc
+#Étape 2 : Ajouter le dépôt Docker
+#commande à mettre tout d'un coup 
+echo "Ajout du dépôt Docker..."
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian \
+  $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+  tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+apt-get update -y
+
+#Étape 3 : Installer Docker et les plugins nécessaires
+apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+#Étape 4 : Vérifier l'installation de Docker
+docker --version
+docker run hello-world
+#Étape 6 : Lancer des conteneurs Nginx et Apache pour vérification (Optionnel)
+docker run -p 8080:80 -d nginx
+docker run -p 8081:80 -d httpd
+#Ici je vais créer un fichier nommé docker-services pour utiliser docker-compose.yml
+mkdir -p ~/docker-services
+cd ~/docker-services
+nano docker-compose.yml
+#Je met la configuration wordpress et zabbix dans le nano 
+version: '3.8'
+
+services:
+  # Service WordPress
+  wordpress:
+    image: wordpress:latest
+    container_name: wordpress
+    environment:
+      WORDPRESS_DB_HOST: db:3306
+      WORDPRESS_DB_USER: wordpress
+      WORDPRESS_DB_PASSWORD: wordpress_password
+      WORDPRESS_DB_NAME: wordpress_db
+    ports:
+      - "8082:80"  # Accès à WordPress via le port 8080 de l'hôte
+    depends_on:
+      - db
+
+  # Service MySQL pour WordPress
+  db:
+    image: mysql:5.7
+    container_name: wordpress_db
+    environment:
+      MYSQL_DATABASE: wordpress_db
+      MYSQL_USER: wordpress
+      MYSQL_PASSWORD: wordpress_password
+      MYSQL_ROOT_PASSWORD: root_password
+    volumes:
+      - wordpress_db_data:/var/lib/mysql
+
+  # Service Zabbix
+  zabbix-server:
+    image: zabbix/zabbix-server-mysql:alpine-6.4-latest
+    container_name: zabbix_server
+    environment:
+      DB_SERVER_HOST: zabbix_db
+      MYSQL_DATABASE: zabbix_db
+      MYSQL_USER: zabbix
+      MYSQL_PASSWORD: zabbix_password
+      MYSQL_ROOT_PASSWORD: root_password
+    depends_on:
+      - zabbix_db
+
+  # Base de données pour Zabbix
+  zabbix_db:
+    image: mysql:5.7
+    container_name: zabbix_db
+    environment:
+      MYSQL_DATABASE: zabbix_db
+      MYSQL_USER: zabbix
+      MYSQL_PASSWORD: zabbix_password
+      MYSQL_ROOT_PASSWORD: root_password
+    volumes:
+      - zabbix_db_data:/var/lib/mysql
+
+  # Interface web pour Zabbix
+  zabbix-web:
+    image: zabbix/zabbix-web-nginx-mysql:alpine-6.4-latest
+    container_name: zabbix_web
+    environment:
+      ZBX_SERVER_HOST: zabbix-server
+      DB_SERVER_HOST: zabbix_db
+      MYSQL_DATABASE: zabbix_db
+      MYSQL_USER: zabbix
+      MYSQL_PASSWORD: zabbix_password
+      MYSQL_ROOT_PASSWORD: root_password
+    ports:
+      - "8083:8080"  # Accès à l'interface Zabbix via le port 8081 de l'hôte
+    depends_on:
+      - zabbix-server
+      - zabbix_db
+
+volumes:
+  wordpress_db_data:
+  zabbix_db_data:
+
+#et je lance docker compose qui va demarrer et configurer les conteneurs définis
+docker compose up -d
+
